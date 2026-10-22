@@ -373,6 +373,50 @@ body.no-pron .pron{display:none}
 </style>
 </head>
 <body>
+<!-- 앱 안 브라우저(카카오톡 등)는 음성 기능(speechSynthesis)이 없어 소리가 나지 않아요.
+     카카오톡이면 바로 기본 브라우저로 다시 열고, 그 밖의 경우엔 상단 안내로 외부 브라우저 열기를 도와요. -->
+<style>
+.ext-bar{position:sticky;top:0;z-index:60;background:#221d18;color:#fff;padding:10px 14px;font-size:13px;line-height:1.5;display:flex;gap:10px;align-items:center}
+.ext-bar p{margin:0;flex:1}.ext-bar b{color:#ffd05a}
+.ext-bar button{flex:none;border:0;border-radius:10px;padding:9px 12px;font-weight:800;font-size:13px;background:#cf432a;color:#fff}
+.ext-bar .x{background:transparent;color:#bbb;padding:6px;font-size:16px}
+</style>
+<script>
+(function(){
+  var ua=navigator.userAgent||'';
+  var isKakao=/KAKAOTALK/i.test(ua);
+  var isLine=/\bLine\//i.test(ua);
+  var isAndroid=/Android/i.test(ua);
+  var inApp=isKakao||isLine||/Instagram|FBAN|FBAV|NAVER\(inapp|DaumApps|everytimeApp|Snapchat|; wv\)/i.test(ua);
+  var url=location.href.split('#')[0];
+  function openExternal(){
+    if(isKakao){location.href='kakaotalk://web/openExternal?url='+encodeURIComponent(url);return true}
+    if(isLine){location.href=url+(url.indexOf('?')<0?'?':'&')+'openExternalBrowser=1';return true}
+    if(isAndroid){location.href='intent://'+url.replace(/^https?:\/\//,'')+'#Intent;scheme=https;package=com.android.chrome;end';return true}
+    return false;
+  }
+  window.hanashiOpenExternal=openExternal;
+  // 카카오톡: 한 번만 자동으로 기본 브라우저로 넘김 (되돌아와도 반복하지 않음)
+  if(isKakao&&location.protocol==='https:'){
+    var tried=false;try{tried=sessionStorage.getItem('hanashi-ext')==='1';sessionStorage.setItem('hanashi-ext','1')}catch(e){}
+    if(!tried)openExternal();
+  }
+  function bar(html,withButton){
+    if(document.getElementById('extBar'))return;
+    var d=document.createElement('div');d.className='ext-bar';d.id='extBar';d.setAttribute('role','status');
+    d.innerHTML='<p>'+html+'</p>'+(withButton?'<button id="extOpen">외부 브라우저로 열기</button>':'')+'<button class="x" aria-label="닫기">✕</button>';
+    document.body.insertBefore(d,document.body.firstChild);
+    d.querySelector('.x').onclick=function(){d.remove()};
+    var b=document.getElementById('extOpen');
+    if(b)b.onclick=function(){if(!openExternal())alert('오른쪽 위(또는 아래) ⋯ 메뉴에서 "다른 브라우저로 열기" 또는 "Safari로 열기"를 눌러 주세요.')};
+  }
+  window.hanashiSoundNotice=bar;
+  document.addEventListener('DOMContentLoaded',function(){
+    if(inApp){bar('<b>앱 안 브라우저</b>에서는 일본어 <b>소리가 나지 않아요</b>. Chrome 같은 기본 브라우저로 열어 주세요.',true);return}
+    if(!('speechSynthesis' in window)){bar('이 브라우저는 <b>음성 기능을 지원하지 않아</b> 소리가 나지 않아요. Chrome으로 열어 주세요.',isAndroid)}
+  });
+})();
+</script>
 <div class="shell">
   <header class="topbar">
     <div class="brand"><div class="seal">話</div>하나시 일본어</div>
@@ -1494,6 +1538,12 @@ function streak(){
 const synth=window.speechSynthesis;let jaVoice=null;
 function pickVoice(){if(!synth)return;const v=synth.getVoices();jaVoice=v.find(x=>x.lang==='ja-JP'&&/google|natural|online/i.test(x.name))||v.find(x=>x.lang==='ja-JP')||v.find(x=>/^ja/i.test(x.lang))||null}
 if(synth){pickVoice();synth.onvoiceschanged=pickVoice}
+// 음성 목록은 있는데 일본어 음성이 없으면 설치 방법 안내 (목록이 늦게 오는 기기를 위해 잠시 기다린 뒤 확인)
+if(synth)setTimeout(()=>{
+  pickVoice();
+  const voices=synth.getVoices();
+  if(voices.length&&!jaVoice)window.hanashiSoundNotice?.('이 기기에 <b>일본어 음성이 없어서</b> 소리가 안 나거나 다른 언어로 읽힐 수 있어요. 설정 → 일반 → <b>텍스트 음성 변환(TTS)</b>에서 일본어 음성을 설치해 주세요.',false);
+},3000);
 // 가장 최근에 요청한 소리만 재생: 이전 요청·예약은 모두 무효
 let speakGen=0;
 function speak(text,rate){
