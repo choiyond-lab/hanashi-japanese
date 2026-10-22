@@ -141,6 +141,7 @@ body.no-pron .pron{display:none}
 .seg{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}
 .seg button{border:1.5px solid var(--line);background:var(--surface);border-radius:99px;padding:7px 13px;font-size:13px;font-weight:700;color:var(--ink2)}
 .seg button.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.rv-card{padding:14px 14px 16px}.rv-card .seg{margin:0 0 10px}.rv-card .seg button{padding:7px 11px}.rv-seg i{font-style:normal;opacity:.65;font-size:11px;margin-left:2px}
 .wl{list-style:none;margin:0;padding:0}
 .wl li{display:flex;gap:12px;align-items:center;padding:12px 2px;border-bottom:1px solid var(--line);cursor:pointer}
 .wl li:last-child{border-bottom:0}
@@ -1670,6 +1671,7 @@ function viewHome(){
       <div class="t"><small>${L.kana?'글자':'레슨 '+L.id.slice(1)}</small><b>${L.title}</b><div class="bar"><i style="width:${lp.n?lp.intro/lp.n*100:0}%"></i></div></div>
       <span style="color:var(--muted)">›</span>
     </div>
+    ${reviewPickerHTML()}
     <div class="sec-h"><h2>집중 연습</h2><span>배운 항목 ${lc}개</span></div>
     <div class="practice-grid">
       <button class="pr" data-act="p-listen" ${ok4?'':'disabled'}><div class="e">🎧</div><b>듣기 집중</b><span>소리만으로 알아듣기</span></button>
@@ -1679,7 +1681,39 @@ function viewHome(){
     </div>`;
   bindView();
 }
+/* ------------------------------------------------------------
+   배운 것 복습: 오늘 / 최근 7일 / 지금까지 배운 항목만 골라 자유롭게 복습
+   - 예정된 복습(오늘의 학습)과 별개. 맞히면 일정은 그대로, 틀리면 다시 나오도록 간격을 줄임
+   ------------------------------------------------------------ */
+const RV_RANGES=[['today','오늘 배운 것'],['week','최근 7일'],['all','지금까지 전체']];
+const RV_KINDS=[['all','전체'],['word','단어'],['phrase','문장'],['kana','가나']];
+function reviewPool(range,kind){
+  const since=range==='today'?dayStart():range==='week'?dayStart()-6*DAY:0;
+  return learned().filter(x=>DB.cards[x.id].intro>=since&&(kind==='all'||x.kind===kind));
+}
+function reviewPickerHTML(){
+  const S0=DB.settings,range=S0.rvRange||'today',kind=S0.rvKind||'all',count=S0.rvCount||20;
+  const n=reviewPool(range,kind).length,q=Math.min(n,count);
+  const seg=(key,list,cur,label)=>`<div class="seg rv-seg">${list.map(([v,l])=>`<button class="${String(cur)===String(v)?'on':''}" data-rv="${key}" data-v="${v}">${label?label(v,l):l}</button>`).join('')}</div>`;
+  return `<div class="sec-h"><h2>배운 것 복습</h2><span>예정 복습과 별개로 자유롭게</span></div>
+    <div class="card rv-card">
+      ${seg('rvRange',RV_RANGES,range,(v,l)=>`${l} <i>${reviewPool(v,kind).length}</i>`)}
+      ${seg('rvKind',RV_KINDS,kind)}
+      ${seg('rvCount',[[10,'10문제'],[20,'20문제'],[30,'30문제']],count)}
+      <button class="btn btn-primary btn-block" data-act="rv-go" ${n?'':'disabled'}>${n?`🔁 ${RV_RANGES.find(r=>r[0]===range)[1]} ${q}개 복습하기`:range==='today'?'오늘 새로 배운 항목이 아직 없어요':'아직 배운 항목이 없어요'}</button>
+    </div>`;
+}
+function startReview(){
+  const S0=DB.settings,range=S0.rvRange||'today',kind=S0.rvKind||'all',count=S0.rvCount||20;
+  const pool=reviewPool(range,kind);if(!pool.length)return;
+  // 잊어버릴 때가 가까운 것·자주 틀린 것을 앞쪽에 두고 약간 섞어서 고름
+  const now=Date.now(),score=x=>{const c=DB.cards[x.id];return (c.due-now)/DAY-c.lapses*2-(c.ng/(c.ok+c.ng+1))*3+Math.random()*2};
+  const pick=shuffle([...pool].sort((a,b)=>score(a)-score(b)).slice(0,count));
+  const title=`${RV_RANGES.find(r=>r[0]===range)[1]} 복습`;
+  startSession({practice:pick.map(item=>({item,t:'ex'})),title});
+}
 function bindView(){
+  document.querySelectorAll('#view [data-rv]').forEach(b=>b.onclick=()=>{const k=b.dataset.rv,v=b.dataset.v;DB.settings[k]=k==='rvCount'?+v:v;save();render()});
   document.querySelectorAll('#view [data-act]').forEach(b=>b.onclick=()=>homeAct(b.dataset.act));
   document.querySelectorAll('#view [data-lesson]').forEach(b=>b.onclick=()=>openLesson(b.dataset.lesson));
 }
@@ -1693,6 +1727,7 @@ function homeAct(a){
   if(a==='more')startSession({news:nextNew(5),reviews:[],title:'추가 학습'});
   if(a==='p-listen'){const pool=shuffle(learned()).slice(0,12);startSession({practice:pool.map(it=>({item:it,t:'ex',type:it.kind==='kana'?'kanaListen':(it.kind==='phrase'&&it.line.toks.length>=3&&Math.random()<.5?'dictation':'listen')}))})}
   if(a==='p-speak'){const pool=shuffle(learned().filter(x=>x.kind!=='kana')).slice(0,10);startSession({practice:pool.map(it=>({item:it,t:'ex',type:'speak'}))})}
+  if(a==='rv-go')startReview();
   if(a==='p-weak'){
     const pool=learned().map(it=>({it,c:DB.cards[it.id]})).sort((a,b)=>(b.c.ng/(b.c.ok+b.c.ng+1)+b.c.lapses*.3)-(a.c.ng/(a.c.ok+a.c.ng+1)+a.c.lapses*.3)).slice(0,12).map(x=>x.it);
     startSession({practice:shuffle(pool).map(it=>({item:it,t:'ex'}))});
