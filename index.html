@@ -298,6 +298,9 @@ body.no-pron .pron{display:none}
 .rp-actions{display:flex;gap:8px}
 .rp-actions .btn{flex:1;padding:12px 8px;font-size:14px}
 .rp-opts{display:grid;gap:8px;margin-top:10px}
+.opt-row{display:flex;gap:8px;align-items:stretch}.opt-row .opt{flex:1;min-width:0}
+.opt-say{flex:none;width:52px;border-radius:16px;border:2px solid var(--line);border-bottom-width:4px;background:var(--ai-soft);color:var(--ai);font-size:18px}
+.opt-say:active{transform:translateY(2px)}
 .typing{display:inline-flex;gap:4px;padding:14px 16px}
 .typing i{width:7px;height:7px;border-radius:50%;background:var(--muted);animation:blink 1s infinite}
 .typing i:nth-child(2){animation-delay:.2s}.typing i:nth-child(3){animation-delay:.4s}
@@ -2233,7 +2236,9 @@ function rpChoices(s){
   if(unique.length<6)unique=mLines(LESSONS.filter(L=>L.id!==s.L.id));
   const nearby=shuffle(unique).sort((a,b)=>Math.abs(a.line.bare.length-ln.line.bare.length)-Math.abs(b.line.bare.length-ln.line.bare.length)).slice(0,6);
   const opts=shuffle([ln,...shuffle(nearby).slice(0,2)]);
-  $('#rpOpts').innerHTML=opts.map((o,i)=>`<button class="opt jp-opt" data-choice="${i}"><span class="opt-text">${o.line.ruby}</span></button>`).join('');
+  // 보기마다 오른쪽에 소리 듣기 버튼: 듣고 고를 수 있게 (누르기만 해서는 답으로 처리되지 않음)
+  $('#rpOpts').innerHTML=opts.map((o,i)=>`<div class="opt-row"><button class="opt jp-opt" data-choice="${i}"><span class="opt-text">${o.line.ruby}</span></button><button class="opt-say" data-say-opt="${i}" aria-label="${i+1}번 보기 듣기">🔊</button></div>`).join('');
+  document.querySelectorAll('#rpOpts [data-say-opt]').forEach(b=>b.onclick=e=>{e.stopPropagation();speak(sayLine(opts[+b.dataset.sayOpt].line))});
   document.querySelectorAll('#rpOpts [data-choice]').forEach(b=>b.onclick=()=>{
     if(RP!==s||s.busy||b.disabled)return;
     if(opts[+b.dataset.choice]===ln){b.classList.add('correct');rpDone(s.tries===0)}
